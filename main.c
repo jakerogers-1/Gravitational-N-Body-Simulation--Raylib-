@@ -7,18 +7,33 @@
 #include "rlgl.h"
 #include "raymath.h"
 
+#include "base.h"
+#include "sim_naive.h"
+
 #include <stdio.h>
 #include <string.h> // For strncat
 #include <stdlib.h>
 
-#include "layout.h"
-
+#define MAX_STR_LEN 128
+#define SCREEN_WIDTH 1280
+#define SCREEN_HEIGHT 720
 
 typedef struct {
-    Vector2 pos;
-    Vector2 vel; 
-    float mass;
-} Body;
+    int menu_w;
+    int menu_h;
+    bool show_readme;
+    int sim_mode;
+    int int_mode; 
+    char *sim_types;
+    char *integrators;
+} MenuSettings;
+
+typedef struct {
+    float delta_t;
+    char *delta_t_buffer;
+    char *text_val;
+    bool allow_edit;
+} DeltaTControl;
 
 //------------------------------------------------------------------------------------
 // Program main entry point
@@ -27,13 +42,13 @@ int main ()
 {
     // Initialization
     //--------------------------------------------------------------------------------------
-    const int screenWidth = 800;
-    const int screenHeight = 450;
-
-    InitWindow(screenWidth, screenHeight, "raylib [core] example - 2d camera mouse zoom");
+    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "[Raylib] N-Body Simulation");
 
     Camera2D camera = { 0 };
-    camera.zoom = 1.0f;
+    camera.target = (Vector2){UNIVERSE_WIDTH/2, UNIVERSE_HEIGHT/2};
+    camera.offset = (Vector2){GetScreenWidth()/2, GetScreenHeight()/2};
+    camera.zoom = 0.15f;
+    
 
     bool spawn_mode = false;
 
@@ -41,16 +56,31 @@ int main ()
     int spawn_index = 0;
 
     const int MAX_BODIES = 1024;
-    int bnum = 0;
+    int bnum = 0;   
     Body *blist = calloc(MAX_BODIES, sizeof(Body));
-
-    const int GRAV_CONST = 1;
-    float delta_t = 0.1;
-    bool buttonClicked = false;
 
     GuiLoadStyle("style_jungle.rgs");
 
-    bool show_readme_window = true;
+    MenuSettings *mset = (MenuSettings *)malloc(sizeof(MenuSettings)); // Allocate memory
+    mset->menu_w = GetScreenWidth();
+    mset->menu_h = GetScreenHeight()*0.2;
+    mset->show_readme = false;
+    mset->sim_mode = 0;
+    mset->int_mode = 0;
+    mset->sim_types = "Naive;Barnes Hut;PM";
+    mset->integrators = "Euler;RK4";
+
+    DeltaTControl *mdt = (DeltaTControl *)malloc(sizeof(DeltaTControl));
+    mdt->delta_t = 0.1;
+    mdt->delta_t_buffer = (char *)calloc(MAX_STR_LEN, sizeof(char));         
+    mdt->text_val = (char *)calloc(MAX_STR_LEN, sizeof(char));
+    snprintf(mdt->text_val, MAX_STR_LEN, "%f", mdt->delta_t); 
+    mdt->allow_edit = false;  
+    
+    const char *readme_text = 
+        "This is a simulation of the N-body problem for gravity.\n\n"
+        "A number of different simulation types and numerical integrators have\nbeen made available \n\n"
+        "Please contact me at jakerogers-1 on GitHub for any points of discussion";
 
     SetTargetFPS(60);                   // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
@@ -58,21 +88,6 @@ int main ()
     // Main game loop
     while (!WindowShouldClose())        // Detect window close button or ESC key
     {
-        buttonClicked = GuiButton((Rectangle){ 100, 100, 120, 40 }, "Click Me");
-        if (buttonClicked) 
-        {
-            DrawText("Button clicked!", 250, 110, 20, DARKGRAY);
-        }
-
-        if (show_readme_window && GuiWindowBox((Rectangle){50, 50, 250, 250}, "Read Me"))
-        {
-            show_readme_window = false;
-        }
-        
-        //GuiPanel((Rectangle){0, 0, 200, 600}, "Simulation Settings"); 
-        show_main_menu(GetScreenWidth()*0.2, GetScreenHeight());
-
-
         // Update
         //----------------------------------------------------------------------------------
         
@@ -155,7 +170,6 @@ int main ()
         }
     
         //----------------------------------------------------------------------------------
-
         // Draw
         //----------------------------------------------------------------------------------
         BeginDrawing();
@@ -165,39 +179,31 @@ int main ()
 
                 // Draw the 3d grid, rotated 90 degrees and centered around 0,0 
                 // just so we have something in the XY plane
-                rlPushMatrix();
-                    rlTranslatef(0, 25*50, 0);
-                    rlRotatef(90, 1, 0, 0);
-                rlPopMatrix();
+                
 
                 // Draw a reference circle
                 DrawCircle(GetScreenWidth()/2, GetScreenHeight()/2, 50, MAROON);
 
-            for (int i = 0; i < bnum; i++) 
-            {
-                Vector2 net_force = Vector2Zero();
-                Vector2 r1 = blist[i].pos;
+                DrawRectangleLinesEx(
+                    (Rectangle){
+                    -UNIVERSE_WIDTH/2, -UNIVERSE_HEIGHT/2, 
+                    UNIVERSE_WIDTH, UNIVERSE_HEIGHT}, 15.0, RED);
 
-                for (int j = 0; j < bnum; j++) 
+                //----------------------------------------------------------------------------------
+                // Naive Simulation
+                //----------------------------------------------------------------------------------     
+                if (mset->sim_mode == 0)
                 {
-                    if (i == j) { continue; }
-                    
-                    Vector2 r2 = blist[j].pos;
-
-                    Vector2 force = Vector2Scale(Vector2Normalize(Vector2Subtract(r2,r1)), 
-                    GRAV_CONST * blist[i].mass * blist[j].mass / Vector2DistanceSqr(r1, r2));
-
-                    net_force = Vector2Add(net_force, force);
+                    sim_naive(blist, bnum, mdt->delta_t);
+                    for (int i = 0; i < bnum; i++)
+                    {
+                    DrawCircle(
+                            blist[i].pos.x, blist[i].pos.y, 4*blist[i].mass, BLUE
+                        );
+                    }
                 }
+                //----------------------------------------------------------------------------------     
 
-                blist[i].vel = Vector2Add(blist[i].vel, Vector2Scale(net_force, delta_t / blist[i].mass));
-                blist[i].pos = Vector2Add(blist[i].pos, Vector2Scale(blist[i].vel, delta_t));
-                
-                DrawCircle(
-                    blist[i].pos.x, blist[i].pos.y, 4*blist[i].mass, BLUE
-                );
-            }
-            
             EndMode2D();
 
             if (spawn_mode == false) 
@@ -211,15 +217,56 @@ int main ()
                 strncat(base, mass_str, sizeof(base) - strlen(base) - 1);
                 DrawText(base,  20, 20, 20, GREEN); 
 
-                DrawCircleV(GetMousePosition(), 4*spawn_sizes[spawn_index], DARKGRAY);  
+                DrawCircleV(GetMousePosition(), 1*spawn_sizes[spawn_index], DARKGRAY);  
             }
-            
 
+            //----------------------------------------------------------------------------------
+            // Setup GUI menu elements
+            // rendered last so they're on top of everything else
+            //----------------------------------------------------------------------------------
+            GuiPanel((Rectangle){0, 0, mset->menu_w, mset->menu_h}, NULL);        
 
+            GuiPanel((Rectangle){0, 0, mset->menu_w*0.15, mset->menu_h}, "Simulation Type");
+
+            GuiPanel((Rectangle){mset->menu_w*0.15, 0, mset->menu_w*0.15, mset->menu_h}, 
+                "Integrator");
+
+            GuiListView( (Rectangle){ 0, 25, mset->menu_w*0.15, mset->menu_h - 25 }, 
+                mset->sim_types, NULL, &mset->sim_mode);
             
-            // Draw mouse reference
-            //Vector2 mousePos = GetWorldToScreen2D(GetMousePosition(), camera)
-            //DrawCircleV(GetMousePosition(), 4, DARKGRAY);
+            GuiListView( (Rectangle){ mset->menu_w*0.15, 25, mset->menu_w*0.15, 
+                mset->menu_h - 25 }, mset->integrators, NULL, &mset->int_mode);
+
+            if (mset->show_readme)
+            {
+                if (GuiWindowBox(
+                (Rectangle){ GetScreenWidth()*0.4, GetScreenHeight()*0.4, 
+                GetScreenWidth()*0.2, GetScreenHeight()*0.2 }, "Read Me"))
+                {
+                    mset->show_readme = false;
+                }
+                
+                GuiTextBox((Rectangle){ GetScreenWidth()*0.25, GetScreenHeight()*0.25, 
+                GetScreenWidth()*0.50, GetScreenHeight()*0.50 },(char *)readme_text, 64, false); 
+            }
+            //----------------------------------------------------------------------------------
+            // Delta_t value controls
+            //----------------------------------------------------------------------------------
+            GuiPanel((Rectangle){mset->menu_w*0.3, 0, mset->menu_w*0.15, mset->menu_h}, 
+                "Delta t");
+                
+            if (GuiValueBoxFloat(
+                (Rectangle){ mset->menu_w*0.3, 25, mset->menu_w*0.15, mset->menu_h*0.3 }, 
+                NULL, mdt->text_val, &mdt->delta_t, mdt->allow_edit))
+            {
+                mdt->allow_edit = !mdt->allow_edit;
+            }
+
+            snprintf(mdt->delta_t_buffer, MAX_STR_LEN, "%f", mdt->delta_t);            
+            //----------------------------------------------------------------------------------
+            //
+            //----------------------------------------------------------------------------------
+
 
         EndDrawing();
         //----------------------------------------------------------------------------------

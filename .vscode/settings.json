@@ -12,6 +12,9 @@
 		"raygui.h": "c",
 		"raymath.h": "c",
 		"rlgl.h": "c",
-		"raylib.h": "c"
+		"raylib.h": "c",
+		"string.h": "c",
+		"base.h": "c",
+		"sim_barnes_hut.h": "c"
 	}
 }
