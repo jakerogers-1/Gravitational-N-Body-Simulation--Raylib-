@@ -9,6 +9,7 @@
 
 #include "base.h"
 #include "sim_naive.h"
+#include "sim_barnes_hut.h"
 
 #include <stdio.h>
 #include <string.h> // For strncat
@@ -48,16 +49,14 @@ int main ()
     camera.target = (Vector2){UNIVERSE_WIDTH/2, UNIVERSE_HEIGHT/2};
     camera.offset = (Vector2){GetScreenWidth()/2, GetScreenHeight()/2};
     camera.zoom = 0.15f;
-    
+
+    Rectangle world_border = (Rectangle){-UNIVERSE_WIDTH/2, 
+        -UNIVERSE_HEIGHT/2, UNIVERSE_WIDTH, UNIVERSE_HEIGHT};
 
     bool spawn_mode = false;
 
-    int spawn_sizes[] = {1, 2, 3, 4, 5};
-    int spawn_index = 0;
-
-    const int MAX_BODIES = 1024;
     int bnum = 0;   
-    Body *blist = calloc(MAX_BODIES, sizeof(Body));
+    Body *blist = calloc(MAX_NUM_BODIES, sizeof(Body));
 
     GuiLoadStyle("style_jungle.rgs");
 
@@ -81,6 +80,8 @@ int main ()
         "This is a simulation of the N-body problem for gravity.\n\n"
         "A number of different simulation types and numerical integrators have\nbeen made available \n\n"
         "Please contact me at jakerogers-1 on GitHub for any points of discussion";
+
+    bool debug_mode = true;
 
     SetTargetFPS(60);                   // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
@@ -129,24 +130,18 @@ int main ()
             else { spawn_mode = false; }
         }
 
-        if (IsKeyPressed(KEY_Q) && spawn_mode == true)
-        {
-            if (spawn_index < (sizeof(spawn_sizes)/sizeof(spawn_sizes[0]) - 1)) 
-            { spawn_index++; }
-            else { spawn_index = 0; }
-        }
-
-        if (IsKeyPressed(KEY_E) && spawn_mode == true)
-        {
-            if (spawn_index > 0 ) { spawn_index--; }
-            else { spawn_index = sizeof(spawn_sizes)/sizeof(spawn_sizes[0]) - 1; }
-        }
-
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && spawn_mode == true)
         {
             blist[bnum].pos = GetScreenToWorld2D(GetMousePosition(), camera);
             blist[bnum].vel = (Vector2){ x: 0.0, y: 0.0 };
-            blist[bnum++].mass = spawn_sizes[spawn_index];
+            blist[bnum++].mass = 1;
+        }
+
+        if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) && spawn_mode == true)
+        {
+            blist[bnum].pos = GetScreenToWorld2D(GetMousePosition(), camera);
+            blist[bnum].vel = (Vector2){ x: 0.0, y: 0.0 };
+            blist[bnum++].mass = 1000;
         }
 
         // Zoom based on mouse wheel
@@ -184,10 +179,7 @@ int main ()
                 // Draw a reference circle
                 DrawCircle(GetScreenWidth()/2, GetScreenHeight()/2, 50, MAROON);
 
-                DrawRectangleLinesEx(
-                    (Rectangle){
-                    -UNIVERSE_WIDTH/2, -UNIVERSE_HEIGHT/2, 
-                    UNIVERSE_WIDTH, UNIVERSE_HEIGHT}, 15.0, RED);
+                DrawRectangleLinesEx(world_border, 15.0, RED);
 
                 //----------------------------------------------------------------------------------
                 // Naive Simulation
@@ -195,29 +187,53 @@ int main ()
                 if (mset->sim_mode == 0)
                 {
                     sim_naive(blist, bnum, mdt->delta_t);
-                    for (int i = 0; i < bnum; i++)
-                    {
-                    DrawCircle(
-                            blist[i].pos.x, blist[i].pos.y, 4*blist[i].mass, BLUE
-                        );
-                    }
+                    
                 }
                 //----------------------------------------------------------------------------------     
+                else if (mset->sim_mode == 1)
+                {
+                    metadata_BH mbh = sim_barnes_hut(blist, bnum, 5, mdt->delta_t);
+
+                    Rectangle *rects = malloc((4*bnum+1) * sizeof(Rectangle));
+                    Vector2 *cmasses = malloc((4*bnum+1) * sizeof(Vector2));
+                    float *tmasses = malloc((4*bnum+1) * sizeof(float));
+                    
+                    int count = 0;
+
+                    dfs_info(mbh.root, rects, cmasses, tmasses, &count);
+                    
+                    char masses_str[64]; 
+                    
+                    snprintf(masses_str, sizeof(masses_str), "Total: %.1f, CoM: %.1f, %.1f", tmasses[0], cmasses[0].x, cmasses[0].y);
+                    DrawText(masses_str, rects[0].x, rects[0].y-50, 30, RED); 
+
+                    for (int i = 1; i < count; i++)
+                    {
+                        snprintf(masses_str, sizeof(masses_str), "Total: %.1f, CoM: %.1f, %.1f", tmasses[i], cmasses[i].x, cmasses[i].y);
+
+                        DrawText(masses_str, rects[i].x, rects[i].y-((i%4+1)*20), 20, PURPLE); 
+
+                        DrawRectangleLinesEx(rects[i],2.0,GREEN);
+                    }
+                    free(rects);
+                    free(cmasses);
+                    free(tmasses);
+                }
+
+                for (int i = 0; i < bnum; i++)
+                {
+                    if (blist[i].mass < 10) { DrawCircleV(blist[i].pos, blist[i].mass, BLUE); }
+                    else { DrawCircleV(blist[i].pos, 5, BLACK); }
+                    
+                }
 
             EndMode2D();
 
             if (spawn_mode == false) 
                 { DrawText("Spawn Mode: OFF", 20, 20, 20, DARKGREEN); }
             else 
-            {
-                char mass_str[20]; 
-                snprintf(mass_str, 
-                    sizeof(mass_str), "%d", spawn_sizes[spawn_index]); // Convert the integer to a string
-                char base[50] = "Spawn Mode: ON\nMass: 10^";
-                strncat(base, mass_str, sizeof(base) - strlen(base) - 1);
-                DrawText(base,  20, 20, 20, GREEN); 
-
-                DrawCircleV(GetMousePosition(), 1*spawn_sizes[spawn_index], DARKGRAY);  
+            {                
+                DrawCircleV(GetMousePosition(), 1, DARKGRAY);  
             }
 
             //----------------------------------------------------------------------------------

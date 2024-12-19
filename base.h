@@ -8,8 +8,9 @@
 #define UNIVERSE_WIDTH 1024
 #define UNIVERSE_HEIGHT 512
 #define SOFTENING 0.1
+#define MAX_NUM_BODIES 1024
 
-typedef struct {
+typedef struct Body {
     Vector2 pos;
     Vector2 vel;
     double mass;          

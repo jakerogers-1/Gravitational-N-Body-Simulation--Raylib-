@@ -26,5 +26,6 @@ void sim_naive(Body *bodies, int bnum, float delta_t)
 
         bodies[i].pos = periodic_add(bodies[i].pos, 
             Vector2Scale(bodies[i].vel, delta_t));        
+            
     }
 }
