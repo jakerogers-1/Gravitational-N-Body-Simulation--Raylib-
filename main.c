@@ -81,8 +81,6 @@ int main ()
         "A number of different simulation types and numerical integrators have\nbeen made available \n\n"
         "Please contact me at jakerogers-1 on GitHub for any points of discussion";
 
-    bool debug_mode = true;
-
     SetTargetFPS(60);                   // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
 
@@ -91,7 +89,7 @@ int main ()
     {
         // Update
         //----------------------------------------------------------------------------------
-        
+
         // Translate based on mouse right click
         if (IsMouseButtonDown(MOUSE_BUTTON_LEFT))
         {
@@ -141,7 +139,7 @@ int main ()
         {
             blist[bnum].pos = GetScreenToWorld2D(GetMousePosition(), camera);
             blist[bnum].vel = (Vector2){ x: 0.0, y: 0.0 };
-            blist[bnum++].mass = 1000;
+            blist[bnum++].mass = 10000;
         }
 
         // Zoom based on mouse wheel
@@ -170,15 +168,6 @@ int main ()
         BeginDrawing();
             ClearBackground(RAYWHITE);
 
-            BeginMode2D(camera);
-
-                // Draw the 3d grid, rotated 90 degrees and centered around 0,0 
-                // just so we have something in the XY plane
-                
-
-                // Draw a reference circle
-                DrawCircle(GetScreenWidth()/2, GetScreenHeight()/2, 50, MAROON);
-
                 DrawRectangleLinesEx(world_border, 15.0, RED);
 
                 //----------------------------------------------------------------------------------
@@ -187,12 +176,11 @@ int main ()
                 if (mset->sim_mode == 0)
                 {
                     sim_naive(blist, bnum, mdt->delta_t);
-                    
                 }
                 //----------------------------------------------------------------------------------     
                 else if (mset->sim_mode == 1)
                 {
-                    metadata_BH mbh = sim_barnes_hut(blist, bnum, 5, mdt->delta_t);
+                    metadata_BH mbh = sim_barnes_hut(blist, bnum, 2, mdt->delta_t);
 
                     Rectangle *rects = malloc((4*bnum+1) * sizeof(Rectangle));
                     Vector2 *cmasses = malloc((4*bnum+1) * sizeof(Vector2));

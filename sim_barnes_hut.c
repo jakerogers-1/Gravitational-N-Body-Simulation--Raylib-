@@ -109,7 +109,7 @@ void approx_bodies(Body *bodies, Node *node, Body *base, float theta, int *count
     }
     
     // Update this to account for periodic boundaries
-    float dist = Vector2Distance(node->cmass, base->pos);
+    float dist = Vector2Length(get_disp_vec(node->cmass, base->pos));
 
     if (dist == 0.0f || (node->border.width / dist) < theta)
     {    

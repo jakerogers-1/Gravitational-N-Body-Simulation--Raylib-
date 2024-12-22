@@ -17,7 +17,7 @@ void sim_naive(Body *bodies, int bnum, float delta_t)
 
             Vector2 force = Vector2Scale(Vector2Normalize(disp_vec), 
             GRAV_CONST * bodies[i].mass 
-            * bodies[j].mass / (Vector2LengthSqr(disp_vec) + 0.1));
+            * bodies[j].mass / (Vector2LengthSqr(disp_vec) + 1));
 
             net_force = Vector2Add(net_force, force);
         }
