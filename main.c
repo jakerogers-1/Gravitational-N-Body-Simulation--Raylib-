@@ -10,6 +10,7 @@
 #include "base.h"
 #include "sim_naive.h"
 #include "sim_barnes_hut.h"
+#include "integrators.h"
 
 #include <stdio.h>
 #include <string.h> // For strncat
@@ -18,40 +19,102 @@
 #define MAX_STR_LEN 128
 #define SCREEN_WIDTH 1280
 #define SCREEN_HEIGHT 720
+#define MAXCHAR 1024
 
 typedef struct {
     int menu_w;
     int menu_h;
-    bool show_readme;
+    bool open_body_creator;
     int sim_mode;
     int int_mode; 
+    int scenario_mode;
+    int scenario_current;
     char *sim_types;
     char *integrators;
+    char *scenarios;
 } MenuSettings;
 
 typedef struct {
-    float delta_t;
-    char *delta_t_buffer;
+    float val;
+    char *val_buffer;
     char *text_val;
     bool allow_edit;
-} DeltaTControl;
+} ValueBoxFloatControl;
+
+typedef struct {
+    int val;
+    char *val_buffer;
+    char *text_val;
+    bool allow_edit;
+} ValueBoxControl;
+
+void load_celestial_data(Body* blist, int* bnum, int data_index) 
+{
+    FILE *fp;
+    char row[MAXCHAR];
+
+    if (data_index == 0) {
+        fp = fopen(".\\celestial_data\\solar_system.csv","r");
+    }
+    else if (data_index == 1) {
+        fp = fopen(".\\celestial_data\\binary_system.csv","r");
+    }
+    else if (data_index == 2) {
+        fp = fopen(".\\celestial_data\\random_universe_256.csv","r");
+    }
+
+    fgets(row, MAXCHAR, fp);
+    while (fgets(row, MAXCHAR, fp) != NULL)
+    {   
+        char *token;
+        Body newbod = {0};
+
+        token = strtok(row, ",");
+
+        token = strtok(NULL, ","); // add code to handle names later
+
+        newbod.mass = atof(token);
+        token = strtok(NULL, ",");
+        newbod.rad = atof(token);
+        token = strtok(NULL, ",");
+        newbod.pos.x = atof(token);
+        token = strtok(NULL, ",");
+        newbod.pos.y = atof(token);
+        token = strtok(NULL, ",");
+        newbod.vel.x = atof(token);
+        token = strtok(NULL, ",");
+        newbod.vel.y = atof(token);
+
+        newbod.force = Vector2Zero();
+
+        token = strtok(NULL, ",");
+        
+        newbod.color = GetColor((unsigned int)strtoul(token, NULL, 16));
+        blist[(*bnum)++] = newbod;
+    }
+}
 
 //------------------------------------------------------------------------------------
 // Program main entry point
 //------------------------------------------------------------------------------------
 int main ()
 {
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+
     // Initialization
     //--------------------------------------------------------------------------------------
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "[Raylib] N-Body Simulation");
 
     Camera2D camera = { 0 };
-    camera.target = (Vector2){UNIVERSE_WIDTH/2, UNIVERSE_HEIGHT/2};
-    camera.offset = (Vector2){GetScreenWidth()/2, GetScreenHeight()/2};
-    camera.zoom = 0.15f;
+    camera.target = (Vector2){0.0f, 0.0f};
+    camera.offset = (Vector2){SCREEN_WIDTH/2, 1.25*SCREEN_HEIGHT/2};
+    camera.zoom = 0.75f;
+    camera.rotation = 0.0f;
 
     Rectangle world_border = (Rectangle){-UNIVERSE_WIDTH/2, 
         -UNIVERSE_HEIGHT/2, UNIVERSE_WIDTH, UNIVERSE_HEIGHT};
+
+    Color bgcolor = GetColor((unsigned int)0x2F3B52FF);
 
     bool spawn_mode = false;
 
@@ -63,23 +126,45 @@ int main ()
     MenuSettings *mset = (MenuSettings *)malloc(sizeof(MenuSettings)); // Allocate memory
     mset->menu_w = GetScreenWidth();
     mset->menu_h = GetScreenHeight()*0.2;
-    mset->show_readme = false;
+    mset->open_body_creator = false;
     mset->sim_mode = 0;
     mset->int_mode = 0;
-    mset->sim_types = "Naive;Barnes Hut;PM";
-    mset->integrators = "Euler;RK4";
+    mset->scenario_mode = 0;
+    mset->scenario_current = 0;
+    mset->sim_types = "Naive;Barnes Hut";
+    mset->integrators = "Euler;Vel Verlet;Yoshida4";
+    mset->scenarios = "Solar System;Binary System;Random Dist 256";
 
-    DeltaTControl *mdt = (DeltaTControl *)malloc(sizeof(DeltaTControl));
-    mdt->delta_t = 0.1;
-    mdt->delta_t_buffer = (char *)calloc(MAX_STR_LEN, sizeof(char));         
+    ValueBoxFloatControl *mdt = (ValueBoxFloatControl *)malloc(sizeof(ValueBoxFloatControl));
+    mdt->val = 0.1;
+    mdt->val_buffer = (char *)calloc(MAX_STR_LEN, sizeof(char));         
     mdt->text_val = (char *)calloc(MAX_STR_LEN, sizeof(char));
-    snprintf(mdt->text_val, MAX_STR_LEN, "%f", mdt->delta_t); 
+    snprintf(mdt->text_val, MAX_STR_LEN, "%f", mdt->val); 
     mdt->allow_edit = false;  
-    
-    const char *readme_text = 
-        "This is a simulation of the N-body problem for gravity.\n\n"
-        "A number of different simulation types and numerical integrators have\nbeen made available \n\n"
-        "Please contact me at jakerogers-1 on GitHub for any points of discussion";
+
+    ValueBoxControl *bh_cap_setting = (ValueBoxControl *)malloc(sizeof(ValueBoxControl));
+    bh_cap_setting->val = 3;
+    bh_cap_setting->val_buffer = (char *)calloc(MAX_STR_LEN, sizeof(char));
+    bh_cap_setting->text_val = (char *)calloc(MAX_STR_LEN, sizeof(char));
+    bh_cap_setting->allow_edit = false;
+
+    ValueBoxFloatControl *bh_theta_setting = (ValueBoxFloatControl *)malloc(sizeof(ValueBoxFloatControl));
+    bh_theta_setting->val = 0.5;
+    bh_theta_setting->val_buffer = (char *)calloc(MAX_STR_LEN, sizeof(char));
+    bh_theta_setting->text_val = (char *)calloc(MAX_STR_LEN, sizeof(char));
+    snprintf(bh_theta_setting->text_val, MAX_STR_LEN, "%f", bh_theta_setting->val); 
+    bh_theta_setting->allow_edit = false;
+
+    // Keeping these as separate variables to prevent situations where the 
+    // GUI behaviour sets them to 0 or NULL
+    int bh_carrying_capacity = bh_cap_setting->val;
+    float bh_theta_val = bh_theta_setting->val;
+
+    Integrator integrator = {EULER, integrate_euler};
+
+    load_celestial_data(blist, &bnum, mset->scenario_current);
+
+   //--------------------------------------------------------------------------------------
 
     SetTargetFPS(60);                   // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
@@ -89,7 +174,7 @@ int main ()
     {
         // Update
         //----------------------------------------------------------------------------------
-
+        
         // Translate based on mouse right click
         if (IsMouseButtonDown(MOUSE_BUTTON_LEFT))
         {
@@ -97,11 +182,12 @@ int main ()
             delta = Vector2Scale(delta, -1.0f/camera.zoom);
             camera.target = Vector2Add(camera.target, delta);
         }
-
+        
         if (IsKeyDown(KEY_W))
         {
             Vector2 delta = (Vector2){0.0f, -15.0f};
             camera.target = Vector2Add(camera.target, delta);
+            DrawCircleV((Vector2){5.0f, 5.0f}, 5.0f, BLACK);
         }
 
         if (IsKeyDown(KEY_S))
@@ -121,7 +207,7 @@ int main ()
             Vector2 delta = (Vector2){15.0f, 0.0f};
             camera.target = Vector2Add(camera.target, delta);
         }
-
+        
         if (IsKeyPressed(KEY_TAB))
         {
             if (spawn_mode == false) { spawn_mode = true; }
@@ -141,7 +227,7 @@ int main ()
             blist[bnum].vel = (Vector2){ x: 0.0, y: 0.0 };
             blist[bnum++].mass = 10000;
         }
-
+        
         // Zoom based on mouse wheel
         float wheel = GetMouseWheelMove();
         if (wheel != 0)
@@ -161,26 +247,26 @@ int main ()
             if (wheel < 0) scaleFactor = 1.0f/scaleFactor;
             camera.zoom = Clamp(camera.zoom*scaleFactor, 0.125f, 64.0f);
         }
-    
+
+        integrator = select_integrator((IntegratorType) mset->int_mode);
+
         //----------------------------------------------------------------------------------
         // Draw
         //----------------------------------------------------------------------------------
         BeginDrawing();
-            ClearBackground(RAYWHITE);
-
-                DrawRectangleLinesEx(world_border, 15.0, RED);
-
+            ClearBackground(bgcolor);
+            BeginMode2D(camera);
                 //----------------------------------------------------------------------------------
                 // Naive Simulation
                 //----------------------------------------------------------------------------------     
                 if (mset->sim_mode == 0)
-                {
-                    sim_naive(blist, bnum, mdt->delta_t);
+                {                
+                    sim_naive(blist, bnum, mdt->val, integrator);        
                 }
                 //----------------------------------------------------------------------------------     
                 else if (mset->sim_mode == 1)
                 {
-                    metadata_BH mbh = sim_barnes_hut(blist, bnum, 2, mdt->delta_t);
+                    metadata_BH mbh = sim_barnes_hut(blist, bnum, bh_carrying_capacity, bh_theta_val, mdt->val, integrator);
 
                     Rectangle *rects = malloc((4*bnum+1) * sizeof(Rectangle));
                     Vector2 *cmasses = malloc((4*bnum+1) * sizeof(Vector2));
@@ -189,19 +275,13 @@ int main ()
                     int count = 0;
 
                     dfs_info(mbh.root, rects, cmasses, tmasses, &count);
-                    
-                    char masses_str[64]; 
-                    
-                    snprintf(masses_str, sizeof(masses_str), "Total: %.1f, CoM: %.1f, %.1f", tmasses[0], cmasses[0].x, cmasses[0].y);
-                    DrawText(masses_str, rects[0].x, rects[0].y-50, 30, RED); 
-
+                
                     for (int i = 1; i < count; i++)
-                    {
-                        snprintf(masses_str, sizeof(masses_str), "Total: %.1f, CoM: %.1f, %.1f", tmasses[i], cmasses[i].x, cmasses[i].y);
-
-                        DrawText(masses_str, rects[i].x, rects[i].y-((i%4+1)*20), 20, PURPLE); 
-
-                        DrawRectangleLinesEx(rects[i],2.0,GREEN);
+                    {   
+                        Color color1 = GetColor((unsigned int)strtoul("0xAAAAFFFF", NULL, 16));
+                        Color color2 = GetColor((unsigned int)strtoul("0xAAAAFF30", NULL, 16));
+                        DrawRectangleLinesEx(rects[i],1.0, color1);
+                        DrawRectangleRec(rects[i], color2);
                     }
                     free(rects);
                     free(cmasses);
@@ -210,12 +290,10 @@ int main ()
 
                 for (int i = 0; i < bnum; i++)
                 {
-                    if (blist[i].mass < 10) { DrawCircleV(blist[i].pos, blist[i].mass, BLUE); }
-                    else { DrawCircleV(blist[i].pos, 5, BLACK); }
-                    
+                    DrawCircleV(blist[i].pos, blist[i].rad, blist[i].color);                    
                 }
-
-            EndMode2D();
+                DrawRectangleLinesEx(world_border, 5.0, RAYWHITE);
+            EndMode2D();           
 
             if (spawn_mode == false) 
                 { DrawText("Spawn Mode: OFF", 20, 20, 20, DARKGREEN); }
@@ -223,54 +301,105 @@ int main ()
             {                
                 DrawCircleV(GetMousePosition(), 1, DARKGRAY);  
             }
+        
 
             //----------------------------------------------------------------------------------
             // Setup GUI menu elements
             // rendered last so they're on top of everything else
             //----------------------------------------------------------------------------------
+            
             GuiPanel((Rectangle){0, 0, mset->menu_w, mset->menu_h}, NULL);        
 
-            GuiPanel((Rectangle){0, 0, mset->menu_w*0.15, mset->menu_h}, "Simulation Type");
+            GuiPanel((Rectangle){mset->menu_w*0.25, 0, mset->menu_w*0.25, mset->menu_h}, "Simulation Type");
 
-            GuiPanel((Rectangle){mset->menu_w*0.15, 0, mset->menu_w*0.15, mset->menu_h}, 
+            GuiPanel((Rectangle){mset->menu_w*0.50, 0, mset->menu_w*0.25, mset->menu_h}, 
                 "Integrator");
 
-            GuiListView( (Rectangle){ 0, 25, mset->menu_w*0.15, mset->menu_h - 25 }, 
+            GuiListView( (Rectangle){ mset->menu_w*0.25, 25, mset->menu_w*0.25, mset->menu_h - 25 }, 
                 mset->sim_types, NULL, &mset->sim_mode);
             
-            GuiListView( (Rectangle){ mset->menu_w*0.15, 25, mset->menu_w*0.15, 
+            GuiListView( (Rectangle){ mset->menu_w*0.50, 25, mset->menu_w*0.25, 
                 mset->menu_h - 25 }, mset->integrators, NULL, &mset->int_mode);
 
-            if (mset->show_readme)
-            {
-                if (GuiWindowBox(
-                (Rectangle){ GetScreenWidth()*0.4, GetScreenHeight()*0.4, 
-                GetScreenWidth()*0.2, GetScreenHeight()*0.2 }, "Read Me"))
-                {
-                    mset->show_readme = false;
-                }
-                
-                GuiTextBox((Rectangle){ GetScreenWidth()*0.25, GetScreenHeight()*0.25, 
-                GetScreenWidth()*0.50, GetScreenHeight()*0.50 },(char *)readme_text, 64, false); 
+            //----------------------------------------------------------------------------------
+            // Scenario Selector
+            //----------------------------------------------------------------------------------
+            GuiPanel((Rectangle){0, 0, mset->menu_w*0.25, mset->menu_h}, "Simulation Type");   
+            
+            GuiListView( (Rectangle){ 0, 25, mset->menu_w*0.25, mset->menu_h - 25 }, 
+                mset->scenarios, NULL, &mset->scenario_mode);
+
+            if (mset->scenario_mode != mset->scenario_current)
+            {   
+                free(blist);
+                bnum = 0;
+                blist = calloc(MAX_NUM_BODIES, sizeof(Body));
+                load_celestial_data(blist, &bnum, mset->scenario_mode);
+                mset->scenario_current = mset->scenario_mode;
             }
+
+
             //----------------------------------------------------------------------------------
             // Delta_t value controls
             //----------------------------------------------------------------------------------
-            GuiPanel((Rectangle){mset->menu_w*0.3, 0, mset->menu_w*0.15, mset->menu_h}, 
+            GuiPanel((Rectangle){mset->menu_w*0.75, 0, mset->menu_w*0.25, mset->menu_h*0.5}, 
                 "Delta t");
                 
             if (GuiValueBoxFloat(
-                (Rectangle){ mset->menu_w*0.3, 25, mset->menu_w*0.15, mset->menu_h*0.3 }, 
-                NULL, mdt->text_val, &mdt->delta_t, mdt->allow_edit))
+                (Rectangle){ mset->menu_w*0.75, 25, mset->menu_w*0.25, mset->menu_h*0.5 - 25}, 
+                NULL, mdt->text_val, &mdt->val, mdt->allow_edit))
             {
                 mdt->allow_edit = !mdt->allow_edit;
             }
-
-            snprintf(mdt->delta_t_buffer, MAX_STR_LEN, "%f", mdt->delta_t);            
+            snprintf(mdt->val_buffer, MAX_STR_LEN, "%f", mdt->val); 
             //----------------------------------------------------------------------------------
-            //
+            // Body creation system
             //----------------------------------------------------------------------------------
+            /*
+            if (GuiButton(
+                (Rectangle){mset->menu_w*0.75, mset->menu_h*0.5+25, mset->menu_w*0.25, mset->menu_h*0.5 - 25}, 
+                "Open Menu")) 
+            {
+                mset->open_body_creator = true;
+            }
+            */
+            //----------------------------------------------------------------------------------
+            // Barnes Hut specific menu
+            //----------------------------------------------------------------------------------
+            if (mset->sim_mode == 1)
+            {
+                Rectangle bh_set = {0, SCREEN_HEIGHT-mset->menu_h, mset->menu_w*0.25, mset->menu_h};
+                GuiPanel(bh_set, "Barnes Hut Settings");     
 
+                GuiLabel((Rectangle){bh_set.x+15, bh_set.y+25,bh_set.width,bh_set.height*0.25}, "Node Carrying Cap.");
+
+                // Getting errors if min val is 1, need to look into this
+                if (GuiValueBox(
+                    (Rectangle){ bh_set.x+150, bh_set.y+25, bh_set.width-150, bh_set.height*0.25}, 
+                    NULL, &bh_cap_setting->val, 2, 100, bh_cap_setting->allow_edit))
+                {
+                    bh_cap_setting->allow_edit = !bh_cap_setting->allow_edit;
+
+                    bh_carrying_capacity = bh_cap_setting->val;
+                }
+
+                GuiLabel((Rectangle){bh_set.x+15, bh_set.y+60,bh_set.width,bh_set.height*0.25}, "Theta Ratio Val.");
+
+                if (GuiValueBoxFloat(
+                    (Rectangle){ bh_set.x+150, bh_set.y+60, bh_set.width-150, bh_set.height*0.25}, 
+                    NULL, bh_theta_setting->text_val, &bh_theta_setting->val, bh_theta_setting->allow_edit)
+                )
+                {
+                    if (bh_theta_setting->val < 0.1) { bh_theta_setting->val = 0.1; }
+                    else if (bh_theta_setting->val > 1.0) { bh_theta_setting->val = 1.0; }
+
+                    snprintf(bh_theta_setting->text_val, MAX_STR_LEN, "%.2f", bh_theta_setting->val); 
+                    bh_theta_val = bh_theta_setting->val;
+                    bh_theta_setting->allow_edit = !bh_theta_setting->allow_edit;
+                }
+
+                //GuiLabel((Rectangle){bh_set.x+15, bh_set.y + 50,bh_set.width,bh_set.height*0.5}, "Display Grid");
+            }
 
         EndDrawing();
         //----------------------------------------------------------------------------------

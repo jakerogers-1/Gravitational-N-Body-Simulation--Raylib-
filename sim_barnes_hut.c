@@ -108,7 +108,6 @@ void approx_bodies(Body *bodies, Node *node, Body *base, float theta, int *count
         return;
     }
     
-    // Update this to account for periodic boundaries
     float dist = Vector2Length(get_disp_vec(node->cmass, base->pos));
 
     if (dist == 0.0f || (node->border.width / dist) < theta)
@@ -144,22 +143,19 @@ void update_force(Body *body, Node *root, float theta, float delta_t, metadata_B
 
         net_force = Vector2Add(net_force, force);
     }
+    body->force = net_force;
+    free(ap_bodies);
 
-    body->vel = Vector2Add(body->vel, Vector2Scale(net_force, 
-        delta_t / body->mass));
-    body->pos = periodic_add(body->pos, Vector2Scale(body->vel, delta_t));
 }
 
-metadata_BH sim_barnes_hut(Body *bodies, int bnum, int max_per_node, float delta_t)
+metadata_BH sim_barnes_hut(Body *bodies, int bnum, int max_per_node, float theta, float delta_t, Integrator integrator)
 {
     Node* root = create_empty_node((Rectangle){-UNIVERSE_WIDTH/2, 
         -UNIVERSE_HEIGHT/2, UNIVERSE_WIDTH, UNIVERSE_HEIGHT}, max_per_node);
 
     metadata_BH mbh = {root, 0, max_per_node};
 
-    float theta = 0.5;
-
-    // Rebuild the entire tree
+    // Rebuild tree (do this every time positions change)
     for (int i = 0; i < bnum; i++)
     {
         dfs_insert(&bodies[i], root, &mbh);
@@ -168,6 +164,51 @@ metadata_BH sim_barnes_hut(Body *bodies, int bnum, int max_per_node, float delta
     for (int i = 0; i < bnum; i++)
     {
         update_force(&bodies[i], root, theta, delta_t, &mbh);
+    }
+
+    // ==== Apply integrators ====
+    int stage = 0;
+    integrator.method(bodies, bnum, delta_t, &stage);
+
+    if (integrator.type == VEL_VERLET) 
+    {    
+        free_bh(root);
+        root = create_empty_node((Rectangle){-UNIVERSE_WIDTH/2, 
+        -UNIVERSE_HEIGHT/2, UNIVERSE_WIDTH, UNIVERSE_HEIGHT}, max_per_node);
+        mbh = (metadata_BH){root, 0, max_per_node};
+
+        for (int i = 0; i < bnum; i++)
+        {
+            dfs_insert(&bodies[i], root, &mbh);
+        }
+
+        for (int i = 0; i < bnum; i++)
+        {
+            update_force(&bodies[i], root, theta, delta_t, &mbh);
+        }        
+        integrator.method(bodies, bnum, delta_t, &stage);
+    }
+
+    else if (integrator.type == YOSHIDA4)
+    {
+        for (int i = 0; i < 6; i++)
+        {
+            free_bh(root);
+            mbh = (metadata_BH){root, 0, max_per_node};
+
+            root = create_empty_node((Rectangle){-UNIVERSE_WIDTH/2, 
+                -UNIVERSE_HEIGHT/2, UNIVERSE_WIDTH, UNIVERSE_HEIGHT}, max_per_node);
+            for (int j = 0; j < bnum; j++)
+            {
+                dfs_insert(&bodies[j], root, &mbh);
+            }    
+            for (int j = 0; j < bnum; j++)
+            {
+                update_force(&bodies[j], root, theta, delta_t, &mbh);    
+            }
+            
+            integrator.method(bodies, bnum, delta_t, &stage);
+        }
     }
 
     return mbh;

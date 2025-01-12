@@ -17,6 +17,8 @@
 		"base.h": "c",
 		"sim_barnes_hut.h": "c",
 		"*.m": "c",
-		"sim_naive.h": "c"
+		"sim_naive.h": "c",
+		"integrators.h": "c",
+		"sim_pm.h": "c"
 	}
 }
