@@ -50,7 +50,7 @@ typedef struct {
 
 void load_celestial_data(Body* blist, int* bnum, int data_index) 
 {
-    FILE *fp;
+    FILE *fp = NULL;
     char row[MAXCHAR];
 
     if (data_index == 0) {
@@ -99,7 +99,7 @@ void load_celestial_data(Body* blist, int* bnum, int data_index)
 //------------------------------------------------------------------------------------
 int main ()
 {
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+    //SetConfigFlags(FLAG_WINDOW_RESIZABLE);
 
     // Initialization
     //--------------------------------------------------------------------------------------
